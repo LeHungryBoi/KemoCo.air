@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+gems/
+log/
+# uv
+.venv/
+*.egg-info/

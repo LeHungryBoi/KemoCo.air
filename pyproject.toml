@@ -1,0 +1,23 @@
+[project]
+name = "kemoco-air"
+version = "0.1.0"
+description = "KemoColiseum ESP grid scanner & overlay"
+requires-python = ">=3.10,<3.15"
+dependencies = [
+    "airtest>=1.4.3",
+    "mss>=6.1.0",
+    "numpy>=1.26.4",
+    "opencv-python>=4.11.0.86",
+    "pillow>=12.3.0",
+    "pywin32>=312",
+]
+
+[project.scripts]
+kemo = "kemoco.KemoColiseum:main"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["kemoco*"]
+exclude = ["log", "log.*"]

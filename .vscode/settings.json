@@ -3,5 +3,9 @@
     "**/__pycache__": true,
     "**/*.egg-info": true,
     ".venv": true
-  }
+  },
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false,
+  "files.trimTrailingWhitespace": true
 }

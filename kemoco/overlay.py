@@ -150,7 +150,6 @@ class ESPOverlay:
         if self._running:
             return
         self._running = True
-        self._start_win_event_hook()
         self._thread = threading.Thread(target=self._render_loop, daemon=True)
         self._thread.start()
 
@@ -235,12 +234,78 @@ class ESPOverlay:
                             max(0, self.window_y - OFS_Y))
         set_target_fps(self.fps)
 
+        # 先把 overlay 设为「无焦点/无任务栏」的工具窗口并把前台还给游戏，
+        # 之后再启动 WinEvent 钩子 —— 此时游戏在前台，初值 _game_visible=True，
+        # 不会因为 init_window 抢焦点而误触发 hide。
+        self._setup_overlay_window_style()
+        self._start_win_event_hook()
+
         try:
             while self._running and not window_should_close():
                 self._track_game_window()
                 self._draw_frame()
         finally:
             close_window()
+
+    # ─── Overlay 窗口样式 (无焦点 / 无任务栏图标) ───────────────────────
+
+    def _setup_overlay_window_style(self):
+        """把 overlay 变成「无焦点、无任务栏图标」的 HUD 工具窗口。
+
+        raylib 的 init_window 把窗口当普通应用窗口创建: 出现在任务栏、且
+        创建时抢前台。这会让游戏瞬间失去前台 -> WinEvent 钩子误判并隐藏
+        overlay，用户得手动点回游戏才显示。
+
+        修复: 创建后立即给 overlay 加 WS_EX_NOACTIVATE (永不抢焦点) +
+        WS_EX_TOOLWINDOW (无任务栏图标)、去掉 WS_EX_APPWINDOW，再把被抢走
+        的前台还给游戏窗口。
+        """
+        try:
+            import win32gui
+            import win32con
+        except Exception:
+            return
+
+        # 取 overlay 窗口句柄: 优先用 raylib 的 get_window_handle，失败则 FindWindow
+        overlay_hwnd = 0
+        try:
+            raw = get_window_handle()
+            overlay_hwnd = int(raw) if raw else 0
+        except Exception:
+            overlay_hwnd = 0
+        if not overlay_hwnd:
+            try:
+                overlay_hwnd = win32gui.FindWindow(None, "KemoCo ESP")
+            except Exception:
+                overlay_hwnd = 0
+        if not overlay_hwnd:
+            return
+
+        WS_EX_NOACTIVATE = getattr(win32con, "WS_EX_NOACTIVATE", 0x08000000)
+        try:
+            ex = win32gui.GetWindowLong(overlay_hwnd, win32con.GWL_EXSTYLE)
+            ex |= win32con.WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+            ex &= ~win32con.WS_EX_APPWINDOW
+            win32gui.SetWindowLong(overlay_hwnd, win32con.GWL_EXSTYLE, ex)
+        except Exception:
+            pass
+
+        # 以「不激活」方式重显，刷新任务栏归属
+        try:
+            win32gui.ShowWindow(overlay_hwnd, win32con.SW_SHOWNOACTIVATE)
+        except Exception:
+            pass
+
+        # 把 init_window 抢走的前台还给游戏 (此时本进程持有前台，允许跨进程设置)
+        if self.game_hwnd:
+            try:
+                if win32gui.IsWindow(self.game_hwnd):
+                    win32gui.SetForegroundWindow(self.game_hwnd)
+            except Exception:
+                try:
+                    win32gui.BringWindowToTop(self.game_hwnd)
+                except Exception:
+                    pass
 
     # ─── 游戏窗口前台/可见性检测 (WinEvent 事件驱动) ─────────────────────
 

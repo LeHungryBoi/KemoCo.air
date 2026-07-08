@@ -13,6 +13,7 @@
 - This project is managed by uv.
 - Run with `uv run kemo`.
 - Use `uv add` to add dependencies.
+- preview the ESP look with `uv run python -c "from kemoco.overlay import demo; demo()`
 
 # Coordinate Notes
 ```python

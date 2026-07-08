@@ -115,6 +115,11 @@ class ESPOverlay:
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
+        # 网格可视化状态
+        self._show_grid: bool = False
+        self._grid_color = ESPColor.CYAN
+        self._show_grid_labels: bool = True
+
     # ─── Public API ───────────────────────────────────────────────────────
 
     def start(self):
@@ -135,6 +140,19 @@ class ESPOverlay:
             self._arrows.clear()
             self._labels.clear()
             self._title_text = ""
+            self._show_grid = False
+
+    def draw_grid(self, color=None, show_labels: bool = True):
+        """开启完整 8x8 网格可视化 (外框 + 内部网格线 + 行列标签 A1~H8)。"""
+        with self._lock:
+            self._show_grid = True
+            self._grid_color = color or ESPColor.CYAN
+            self._show_grid_labels = show_labels
+
+    def hide_grid(self):
+        """关闭网格可视化。"""
+        with self._lock:
+            self._show_grid = False
 
     def add_box(self, col: int, row: int, **kwargs) -> ESPBox:
         box = ESPBox(col, row, **kwargs)
@@ -210,6 +228,14 @@ class ESPOverlay:
         if title:
             self._draw_title(title)
 
+        # 先画网格底层，再画 boxes/arrows/labels 叠在上面
+        with self._lock:
+            show_grid = self._show_grid
+            grid_color = self._grid_color
+            show_labels = self._show_grid_labels
+        if show_grid:
+            self._draw_grid(grid_color, show_labels)
+
         for box in boxes:
             self._draw_esp_box(box)
 
@@ -222,6 +248,36 @@ class ESPOverlay:
         end_drawing()
 
     # ─── Drawing primitives (the ESP look) ────────────────────────────────
+
+    def _draw_grid(self, color, show_labels: bool):
+        """画完整 8x8 网格：外框 + 内部网格线 + 行列标签 (A-H 上, 1-8 左)。"""
+        gx = OFS_X
+        gy = OFS_Y
+        thin = 1
+
+        # 内部竖线 (cols-1 条)
+        for c in range(1, GRID_COLS):
+            x = gx + c * CELL_W
+            draw_line_ex(Vector2(x, gy), Vector2(x, gy + GRID_H), thin, color)
+        # 内部横线 (rows-1 条)
+        for r in range(1, GRID_ROWS):
+            y = gy + r * CELL_H
+            draw_line_ex(Vector2(gx, y), Vector2(gx + GRID_W, y), thin, color)
+
+        # 外框 (粗一点)
+        outer = Rectangle(gx, gy, GRID_W, GRID_H)
+        draw_rectangle_lines_ex(outer, 2, color)
+
+        if show_labels:
+            col_letters = "ABCDEFGH"
+            # 列标签 A-H: 顶行每个格子中心上方
+            for c in range(GRID_COLS):
+                cx = gx + c * CELL_W + CELL_W // 2
+                self._draw_text_with_bg(col_letters[c], cx, gy - 18, 14, color, ESPColor.BLACK_BG)
+            # 行标签 1-8: 左列每个格子中心左侧
+            for r in range(GRID_ROWS):
+                cy = gy + r * CELL_H + CELL_H // 2
+                self._draw_text_with_bg(str(r + 1), gx - 16, cy - 7, 14, color, ESPColor.BLACK_BG)
 
     def _draw_title(self, text: str):
         font_size = 22
@@ -319,6 +375,7 @@ def demo():
 
     esp = ESPOverlay(fps=30)
     esp.set_title("MATCH-3 ESP DEMO")
+    esp.draw_grid(color=ESPColor.CYAN, show_labels=True)
 
     esp.add_box(3, 2, color=ESPColor.RED, label="MOVE",
                 fill_color=ESPColor.FILL_RED, line_thickness=2.5)

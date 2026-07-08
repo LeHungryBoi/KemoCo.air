@@ -9,7 +9,6 @@ import logging
 
 logging.getLogger("airtest").setLevel(logging.ERROR)
 
-from .config import RELATIVE_CORNERS
 from .globals import g
 
 
@@ -39,12 +38,8 @@ def main():
                     g.in_match = True
                     print("[log] enter match")
                     g.esp.set_title("MATCH ACTIVE")
-                    # 标记四个角 (你当前 touch 的位置)
-                    for i, pos in enumerate(RELATIVE_CORNERS):
-                        col = i % 2 * 7   # 左列=0, 右列=7
-                        row = i // 2 * 7   # 上行=0, 下行=7
-                        g.esp.add_box(col, row, color=ESPColor.CYAN,
-                                      label=f"CORNER {i}", line_thickness=2.0)
+                    # 画完整 8x8 网格用于肉眼对齐
+                    g.esp.draw_grid(color=ESPColor.CYAN, show_labels=True)
             else:
                 if g.in_match:
                     g.in_match = False

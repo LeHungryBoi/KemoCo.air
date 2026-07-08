@@ -50,9 +50,6 @@ def main():
                         row = i // 2 * 7   # 上行=0, 下行=7
                         esp.add_box(col, row, color=ESPColor.CYAN,
                                     label=f"CORNER {i}", line_thickness=2.0)
-                for pos in relative_corners:
-                    touch(pos)
-                    time.sleep(0.01)
             else:
                 if in_match:
                     in_match = False

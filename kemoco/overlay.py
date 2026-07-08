@@ -23,6 +23,17 @@ from .config import (
 )
 
 
+# ─── WinEvent (SetWinEventHook) 常量 ───────────────────────────────────────────
+# 事件驱动追踪游戏窗口前台/可见状态，替代每帧轮询。仅在状态变化时回调。
+WINEVENT_OUTOFCONTEXT     = 0x0000
+EVENT_SYSTEM_FOREGROUND   = 0x0003   # 某窗口进入前台 (hwnd = 新前台窗口)
+EVENT_SYSTEM_MINIMIZESTART = 0x0016  # 窗口被最小化
+EVENT_SYSTEM_MINIMIZEEND   = 0x0017  # 窗口从最小化恢复
+EVENT_OBJECT_SHOW   = 0x8002        # 窗口/对象显示
+EVENT_OBJECT_HIDE   = 0x8003        # 窗口/对象隐藏
+EVENT_OBJECT_DESTROY = 0x8001       # 窗口/对象销毁 (游戏关闭)
+
+
 # ─── ESP Color palette ─────────────────────────────────────────────────────────
 class ESPColor:
     """ESP / cheat-HUD colors as raylib Color objects."""
@@ -113,6 +124,13 @@ class ESPOverlay:
         self._last_track_x: Optional[int] = None
         self._last_track_y: Optional[int] = None
 
+        # 游戏窗口是否在前台/可见 (由 WinEvent 钩子线程事件驱动更新)
+        self._game_visible: bool = True
+
+        # WinEvent 钩子线程 (事件驱动，平时零 CPU)
+        self._win_event_thread_obj: Optional[threading.Thread] = None
+        self._win_event_cb = None  # 持有 ctypes 回调引用防 GC
+
         self._boxes: List[ESPBox] = []
         self._arrows: List[ESPArrow] = []
         self._labels: List[ESPLabel] = []
@@ -132,11 +150,15 @@ class ESPOverlay:
         if self._running:
             return
         self._running = True
+        self._start_win_event_hook()
         self._thread = threading.Thread(target=self._render_loop, daemon=True)
         self._thread.start()
 
     def shutdown(self):
         self._running = False
+        # 先停 WinEvent 钩子线程，再停渲染线程
+        if self._win_event_thread_obj and self._win_event_thread_obj.is_alive():
+            self._win_event_thread_obj.join(timeout=2)
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
 
@@ -220,6 +242,125 @@ class ESPOverlay:
         finally:
             close_window()
 
+    # ─── 游戏窗口前台/可见性检测 (WinEvent 事件驱动) ─────────────────────
+
+    def _poll_game_visible(self) -> bool:
+        """一次性查询游戏窗口当前是否在前台且可见。
+
+        只在启动时取初值、以及 WinEvent 回调里状态变化时复核用，
+        不在渲染循环里调用。
+        """
+        if not self.game_hwnd:
+            return True
+        try:
+            import win32gui
+            if not win32gui.IsWindow(self.game_hwnd):
+                return False
+            return (win32gui.GetForegroundWindow() == self.game_hwnd
+                    and not win32gui.IsIconic(self.game_hwnd)
+                    and win32gui.IsWindowVisible(self.game_hwnd))
+        except Exception:
+            return self._game_visible  # 查询失败时保持原状
+
+    def _start_win_event_hook(self):
+        """启动 WinEvent 钩子线程。
+
+        用 SetWinEventHook + WINEVENT_OUTOFCONTEXT 订阅系统窗口事件，
+        仅在游戏窗口进入/离开前台、最小化/恢复、显示/隐藏、销毁时回调。
+        相比每帧轮询 GetForegroundWindow，平时零 CPU 开销。
+        """
+        if not self.game_hwnd:
+            return  # 无游戏窗口句柄时跳过 (如 demo 模式)
+        # 初始状态：先轮询一次拿到准确初值 (事件只在未来变化时才来)
+        self._game_visible = self._poll_game_visible()
+        self._win_event_thread_obj = threading.Thread(
+            target=self._win_event_pump, daemon=True)
+        self._win_event_thread_obj.start()
+
+    def _win_event_pump(self):
+        """WinEvent 钩子线程主体：注册钩子 + 跑 message pump 分发回调。
+
+        WINEVENT_OUTOFCONTEXT 的事件会投递到「调用 SetWinEventHook 的线程」
+        的消息队列，必须由该线程自己 pump message 才能触发回调，所以
+        SetWinEventHook 必须在本线程内调用。
+        """
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        PM_REMOVE = 0x0001
+
+        # WinEvent 回调签名
+        WinEventProc = ctypes.WINFUNCTYPE(
+            None,
+            wintypes.HANDLE,  # hWinEventHook
+            wintypes.DWORD,   # event
+            wintypes.HWND,    # hwnd
+            wintypes.LONG,    # idObject
+            wintypes.LONG,    # idChild
+            wintypes.DWORD,   # dwEventThread
+            wintypes.DWORD,   # dwmsEventTime
+        )
+
+        def on_event(hWinEventHook, event, hwnd, idObject, idChild,
+                     dwEventThread, dwmsEventTime):
+            # 只关心窗口本身 (idObject==0 即 OBJID_WINDOW)，忽略子对象/控件
+            if idObject != 0:
+                return
+            self._on_win_event(event, hwnd)
+
+        callback = WinEventProc(on_event)
+        self._win_event_cb = callback  # 防 GC，否则 ctypes 回收会崩溃
+
+        # 订阅相关事件 (每个 SetWinEventHook 接受单个 event 范围)
+        hooks = []
+        for ev in (EVENT_SYSTEM_FOREGROUND,
+                   EVENT_SYSTEM_MINIMIZESTART,
+                   EVENT_SYSTEM_MINIMIZEEND,
+                   EVENT_OBJECT_SHOW,
+                   EVENT_OBJECT_HIDE,
+                   EVENT_OBJECT_DESTROY):
+            h = user32.SetWinEventHook(ev, ev, None, callback, 0, 0,
+                                       WINEVENT_OUTOFCONTEXT)
+            if h:
+                hooks.append(h)
+
+        msg = wintypes.MSG()
+        try:
+            while self._running:
+                # PeekMessage 取走所有待处理消息；WinEvent 回调在此期间被
+                # 系统调用。无消息时小睡 20ms 避免空转 (事件到达后下次循环
+                # 立即处理，最大延迟 ~20ms，对人眼无感)。
+                while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, PM_REMOVE):
+                    user32.TranslateMessage(ctypes.byref(msg))
+                    user32.DispatchMessageW(ctypes.byref(msg))
+                time.sleep(0.02)
+        finally:
+            for h in hooks:
+                user32.UnhookWinEvent(h)
+
+    def _on_win_event(self, event: int, hwnd):
+        """WinEvent 回调：根据事件类型更新 _game_visible。
+
+        - EVENT_SYSTEM_FOREGROUND: 前台变了，重算 (hwnd 可能是任意窗口)
+        - 其它事件: 仅当 hwnd == game_hwnd 时才重算
+        重算统一走 _poll_game_visible()，保证状态完全一致。
+        """
+        if not self.game_hwnd:
+            return
+        if event == EVENT_SYSTEM_FOREGROUND:
+            pass  # 前台变化总要重算
+        elif hwnd == self.game_hwnd:
+            pass  # 事件针对游戏窗口本身
+        else:
+            return  # 与游戏无关的事件，忽略
+
+        new_visible = self._poll_game_visible()
+        if new_visible != self._game_visible:
+            self._game_visible = new_visible
+            print(f"[log] game window "
+                  f"{'foreground' if new_visible else 'background/hidden'} "
+                  f"-> overlay {'shown' if new_visible else 'hidden'}")
+
     # ─── 跟随游戏窗口位置 ─────────────────────────────────────────────────
 
     def _track_game_window(self):
@@ -230,6 +371,11 @@ class ESPOverlay:
             game_client_screen_topleft + GRID_TOP_LEFT - (OFS_X, OFS_Y)
         """
         if not self.game_hwnd:
+            return
+        # 游戏不在前台/不可见时不重定位 (最小化时 ClientToScreen 会返回垃圾坐标)
+        if not self._game_visible:
+            self._last_track_x = None
+            self._last_track_y = None
             return
         try:
             import win32gui
@@ -248,6 +394,14 @@ class ESPOverlay:
     # ─── Frame rendering ─────────────────────────────────────────────────
 
     def _draw_frame(self):
+        # 游戏不在前台/不可见时 overlay 保持全透明 (不绘制任何内容)，
+        # 避免漂浮在其它窗口之上。仅 begin/clear(BLANK)/end 刷新帧缓冲。
+        if not self._game_visible:
+            begin_drawing()
+            clear_background(BLANK)
+            end_drawing()
+            return
+
         with self._lock:
             boxes = list(self._boxes)
             arrows = list(self._arrows)

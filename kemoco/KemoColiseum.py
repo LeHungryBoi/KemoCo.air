@@ -24,8 +24,8 @@ def main():
     g.reset()
     g.hwnd = remove_titlebar()
 
-    # 启动 ESP overlay
-    g.esp = ESPOverlay()
+    # 启动 ESP overlay (传入游戏窗口句柄，overlay 会每帧对齐窗口真实屏幕位置)
+    g.esp = ESPOverlay(game_hwnd=g.hwnd)
     g.esp.start()
     print("[log] overlay started")
 

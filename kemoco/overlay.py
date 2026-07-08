@@ -99,13 +99,19 @@ class ESPOverlay:
                  window_y: int = GRID_TOP_LEFT[1],
                  window_w: int = GRID_W + OFS_X * 2,
                  window_h: int = GRID_H + OFS_Y + 10,
-                 fps: int = 30):
+                 fps: int = 30,
+                 game_hwnd: Optional[int] = None):
 
         self.window_x = window_x
         self.window_y = window_y
         self.window_w = window_w
         self.window_h = window_h
         self.fps = fps
+
+        # 游戏窗口句柄：提供后 overlay 每帧对齐到游戏窗口的真实屏幕位置
+        self.game_hwnd = game_hwnd
+        self._last_track_x: Optional[int] = None
+        self._last_track_y: Optional[int] = None
 
         self._boxes: List[ESPBox] = []
         self._arrows: List[ESPArrow] = []
@@ -209,9 +215,35 @@ class ESPOverlay:
 
         try:
             while self._running and not window_should_close():
+                self._track_game_window()
                 self._draw_frame()
         finally:
             close_window()
+
+    # ─── 跟随游戏窗口位置 ─────────────────────────────────────────────────
+
+    def _track_game_window(self):
+        """每帧把 overlay 对齐到游戏窗口的真实屏幕位置 (ESP 贴附效果)。
+
+        GRID_TOP_LEFT 是「相对于游戏窗口客户区左上角」的像素偏移；
+        overlay 内部网格画在 (OFS_X, OFS_Y) 处，所以 overlay 屏幕左上角应为：
+            game_client_screen_topleft + GRID_TOP_LEFT - (OFS_X, OFS_Y)
+        """
+        if not self.game_hwnd:
+            return
+        try:
+            import win32gui
+            # ClientToScreen 返回客户区左上角的屏幕坐标
+            pt = win32gui.ClientToScreen(self.game_hwnd, (0, 0))
+            target_x = pt[0] + GRID_TOP_LEFT[0] - OFS_X
+            target_y = pt[1] + GRID_TOP_LEFT[1] - OFS_Y
+        except Exception:
+            return
+        # 只在位置变化时重定位，避免每帧无谓调用
+        if (target_x, target_y) != (self._last_track_x, self._last_track_y):
+            set_window_position(max(0, target_x), max(0, target_y))
+            self._last_track_x = target_x
+            self._last_track_y = target_y
 
     # ─── Frame rendering ─────────────────────────────────────────────────
 

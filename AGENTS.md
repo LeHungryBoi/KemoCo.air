@@ -27,6 +27,7 @@
   Never `from .globals import in_match` — you'd lose live updates (rebinding).
 
 # Coordinate Notes
+- always use relative cordinates, if you can't pause, explain, and ask user for direction.
 - Absolute & relative corner coordinates are defined in `kemoco/config.py`
   (`ABSOLUTE_CORNERS` / `RELATIVE_CORNERS`). See that file for exact values.
 - Reference (分辨率 1280x720 無標題欄 無黑邊):

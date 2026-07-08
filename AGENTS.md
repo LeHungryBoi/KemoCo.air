@@ -15,16 +15,28 @@
 - Use `uv add` to add dependencies.
 - preview the ESP look with `uv run python -c "from kemoco.overlay import demo; demo()`
 
+# Config / Globals
+- Two separate concerns, two files:
+  - `kemoco/config.py` — **constants** that never change at runtime
+    (window size, grid coords, derived values, overlay offsets).
+    Logic files only `from .config import ...` and never mutate these.
+  - `kemoco/globals.py` — **mutable runtime state** (the `g` singleton).
+    Initialized to defaults here for cleanliness, but DOES change during
+    execution (e.g. `g.esp`, `g.in_match`, `g.hwnd`, `g.running`).
+- For runtime state, do `from .globals import g` then read/write `g.<field>`.
+  Never `from .globals import in_match` — you'd lose live updates (rebinding).
+
 # Coordinate Notes
+- Absolute & relative corner coordinates are defined in `kemoco/config.py`
+  (`ABSOLUTE_CORNERS` / `RELATIVE_CORNERS`). See that file for exact values.
+- Reference (分辨率 1280x720 無標題欄 無黑邊):
 ```python
-# 絕對座標 (分辨率 1280x720 無標題欄 無黑邊 情況下得到的)
 absolute_corners = [
     [420, 116], # 左上
     [860, 116], # 右上
     [420, 556], # 左下
     [860, 556]  # 右下
 ]
-# 相對座標 (0.0~1.0)
 relative_corners = [
     [0.3281, 0.1611], # 左上
     [0.6719, 0.1611], # 右上

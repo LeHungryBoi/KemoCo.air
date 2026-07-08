@@ -13,18 +13,14 @@ from typing import Optional, Tuple, List
 from raylibpy import *
 
 
-# ─── Grid config (from llm.txt) ───────────────────────────────────────────────
-GRID_TOP_LEFT = (420, 116)
-GRID_BOTTOM_RIGHT = (860, 556)
-GRID_COLS = 8
-GRID_ROWS = 8
-GRID_W = GRID_BOTTOM_RIGHT[0] - GRID_TOP_LEFT[0]  # 440
-GRID_H = GRID_BOTTOM_RIGHT[1] - GRID_TOP_LEFT[1]  # 440
-CELL_W = GRID_W // GRID_COLS   # 55
-CELL_H = GRID_H // GRID_ROWS   # 55
-
-OFS_X = 10
-OFS_Y = 20
+# ─── Grid config (see kemoco/config.py) ───────────────────────────────────────
+from .config import (
+    GRID_TOP_LEFT, GRID_BOTTOM_RIGHT,
+    GRID_COLS, GRID_ROWS,
+    GRID_W, GRID_H,
+    CELL_W, CELL_H,
+    OFS_X, OFS_Y,
+)
 
 
 # ─── ESP Color palette ─────────────────────────────────────────────────────────

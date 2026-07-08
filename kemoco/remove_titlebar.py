@@ -4,8 +4,10 @@ __author__ = "fatty"
 import win32gui
 import win32con
 
+from .config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT
 
-def remove_titlebar(title="KemoColiseum", width=1280, height=720):
+
+def remove_titlebar(title=WINDOW_TITLE, width=WINDOW_WIDTH, height=WINDOW_HEIGHT):
     """Remove title bar / border from a window by its title."""
     hwnd = win32gui.FindWindow(None, title)
     # 強制移除標題欄和邊框

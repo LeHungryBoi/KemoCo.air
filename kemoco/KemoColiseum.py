@@ -9,15 +9,9 @@ import logging
 
 logging.getLogger("airtest").setLevel(logging.ERROR)
 
-# 网格配置 (from llm.txt)
-absolute_corners = [
-    [420, 116], [860, 116],
-    [420, 556], [860, 556],
-]
-relative_corners = [
-    [0.3281, 0.1611], [0.6719, 0.1611],
-    [0.3281, 0.7722], [0.6719, 0.7722],
-]
+from .config import RELATIVE_CORNERS
+from .globals import g
+
 
 def main():
     if not cli_setup():
@@ -28,40 +22,42 @@ def main():
     from .remove_titlebar import remove_titlebar
     from .overlay import ESPOverlay, ESPColor
 
-    hwnd = remove_titlebar()
-    
+    g.reset()
+    g.hwnd = remove_titlebar()
 
     # 启动 ESP overlay
-    esp = ESPOverlay()
-    esp.start()
+    g.esp = ESPOverlay()
+    g.esp.start()
     print("[log] overlay started")
 
-    in_match = False
+    g.in_match = False
+    g.running = True
     try:
-        while True:
+        while g.running:
             if exists(Template(r"tpl1783316818562.png", record_pos=(0.091, -0.236), resolution=(1104, 720))) and exists(Template(r"tpl1783316830805.png", record_pos=(0.083, 0.205), resolution=(1104, 720))):
-                if not in_match:
-                    in_match = True
+                if not g.in_match:
+                    g.in_match = True
                     print("[log] enter match")
-                    esp.set_title("MATCH ACTIVE")
+                    g.esp.set_title("MATCH ACTIVE")
                     # 标记四个角 (你当前 touch 的位置)
-                    for i, pos in enumerate(relative_corners):
+                    for i, pos in enumerate(RELATIVE_CORNERS):
                         col = i % 2 * 7   # 左列=0, 右列=7
                         row = i // 2 * 7   # 上行=0, 下行=7
-                        esp.add_box(col, row, color=ESPColor.CYAN,
-                                    label=f"CORNER {i}", line_thickness=2.0)
+                        g.esp.add_box(col, row, color=ESPColor.CYAN,
+                                      label=f"CORNER {i}", line_thickness=2.0)
             else:
-                if in_match:
-                    in_match = False
+                if g.in_match:
+                    g.in_match = False
                     print("[log] exit match")
-                    esp.clear()  # 清空 overlay
+                    g.esp.clear()  # 清空 overlay
             time.sleep(1.0)
     except KeyboardInterrupt:
         print("[log] shutting down")
     finally:
-        esp.shutdown()
+        g.running = False
+        if g.esp is not None:
+            g.esp.shutdown()
 
 
 if __name__ == "__main__":
     main()
-

@@ -5,6 +5,7 @@ description = "KemoColiseum ESP grid scanner & overlay"
 requires-python = ">=3.10,<3.15"
 dependencies = [
     "airtest>=1.4.3",
+    "pygame>=2.6.1",
 ]
 
 [project.scripts]
